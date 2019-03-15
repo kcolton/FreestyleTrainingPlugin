@@ -8,8 +8,18 @@ private:
 	shared_ptr<bool> enabled;
 	shared_ptr<float> autoAirRoll;
 
+	shared_ptr<bool> randomizeAutoAirRollEnabled;
+	shared_ptr<float> randomizeAutoAirRollLower;
+	shared_ptr<float> randomizeAutoAirRollUpper;
+
+	bool usedAutoAirRollLastTick;
+
 	void Hook();
 	void Unhook();
+
+	void RandomizeAirRollTick(bool usedAutoAirRollThisTick);
+
+	void DoRandomizeAutoAirRoll();
 
 public:
 	virtual void onLoad();
