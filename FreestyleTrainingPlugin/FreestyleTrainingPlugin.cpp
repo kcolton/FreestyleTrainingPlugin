@@ -24,8 +24,9 @@ void FreestyleTrainingPlugin::onLoad()
 	randomizeAutoAirRollLower = make_shared<float>(0.0f);
 	randomizeAutoAirRollUpper = make_shared<float>(0.0f);
 
-	gameWrapper->HookEvent("Function TAGame.GameEvent_Tutorial_TA.OnInit", bind(&FreestyleTrainingPlugin::OnFreeplayLoad, this, std::placeholders::_1));
-	gameWrapper->HookEvent("Function TAGame.GameEvent_Tutorial_TA.Destroyed", bind(&FreestyleTrainingPlugin::OnFreeplayDestroy, this, std::placeholders::_1));
+	// freeplay is now a mutator
+	gameWrapper->HookEvent("Function TAGame.Mutator_Freeplay_TA.Init", bind(&FreestyleTrainingPlugin::OnFreeplayLoad, this, std::placeholders::_1));
+	gameWrapper->HookEvent("Function TAGame.GameEvent_Soccar_TA.Destroyed", bind(&FreestyleTrainingPlugin::OnFreeplayDestroy, this, std::placeholders::_1));
 
 	cvarManager->registerCvar("freestyletraining_enabled", "0", "Enables/disable freestyle training mode", true, true, 0.f, true, 1.f)
 		.addOnValueChanged(std::bind(&FreestyleTrainingPlugin::OnEnabledChanged, this, std::placeholders::_1, std::placeholders::_2));
