@@ -15,6 +15,8 @@ private:
 
 	bool usedAutoAirRollLastTick;
 
+	float nextRandomizationTimeout = .0f;
+	
 	void Hook();
 	void Unhook();
 
@@ -31,5 +33,6 @@ public:
 	void OnFreeplayDestroy(std::string eventName);
 	void OnEnabledChanged(std::string oldValue, CVarWrapper cvar);
 	void Log(std::string message, bool sendToChat);
+	// void ScheduleNextRandomizationTimeout();
 };
 

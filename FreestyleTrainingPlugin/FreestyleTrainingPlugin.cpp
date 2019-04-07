@@ -69,9 +69,11 @@ void FreestyleTrainingPlugin::onLoad()
 		}
 	});
 
+	// todo: use the range widget that i didn't know about at the time
 	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_lower", "0", "Random Auto Air Roll Lower", true, true, 0.0f, true, 1.f).bindTo(randomizeAutoAirRollLower);
 	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_upper", "0", "Random Auto Air Roll Upper", true, true, 0.0f, true, 1.f).bindTo(randomizeAutoAirRollUpper);
 	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_direction", "0", "Random Auto Air Roll Direction", false, false, 0, false, 0, false).bindTo(randomizeAutoAirRollDirection);
+	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_time", "0", "Random Auto Air Roll Time", true, true, 0.0f, true, 600.0f);
 
 	cvarManager->registerNotifier("freestyletraining_do_randomize_auto_air_roll", std::bind(&FreestyleTrainingPlugin::DoRandomizeAutoAirRoll, this), "Randomize auto air roll within upper and lower", PERMISSION_FREEPLAY);
 }
@@ -91,6 +93,7 @@ void FreestyleTrainingPlugin::SetVehicleInput(CarWrapper cw, void * params, stri
 	}
 
 	ControllerInput* ci = (ControllerInput*)params;
+	ServerWrapper training = gameWrapper->GetGameEventAsServer();
 
 	// if user is not overriding with their own inputs
 	if (abs(ci->Roll) < SPINYOUBITCHDEADZONE) {
@@ -100,6 +103,17 @@ void FreestyleTrainingPlugin::SetVehicleInput(CarWrapper cw, void * params, stri
 	else 
 	{
 		RandomizeAirRollTick(false);
+	}
+
+	float secondsElapsed = training.GetSecondsElapsed();
+	float randomizedTimeInRange = cvarManager->getCvar("freestyletraining_randomize_auto_air_roll_time").getFloatValue();
+
+	if (*randomizeAutoAirRollEnabled && randomizedTimeInRange > 0 && secondsElapsed > nextRandomizationTimeout) {
+		DoRandomizeAutoAirRoll();
+		
+		cvarManager->log("randomization timeout elapsed - randomizing auto air roll again in " + to_string(randomizedTimeInRange) + "seconds");
+
+		nextRandomizationTimeout = secondsElapsed + randomizedTimeInRange;
 	}
 }
 
@@ -186,10 +200,10 @@ void FreestyleTrainingPlugin::DoRandomizeAutoAirRoll()
 	chatMsg << setprecision(2) << randomized;
 
 	if (randomized < 0) {
-		chatMsg << " (left)";
+		chatMsg << " [left]";
 	}
 	else if (randomized > 0) {
-		chatMsg << " (right)";
+		chatMsg << " [right]";
 	}
 
 	Log(chatMsg.str(), true);
