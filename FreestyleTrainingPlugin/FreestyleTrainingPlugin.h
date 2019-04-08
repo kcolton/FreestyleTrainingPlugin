@@ -8,10 +8,8 @@ private:
 	shared_ptr<bool> enabled;
 	shared_ptr<float> autoAirRoll;
 
-	shared_ptr<bool> randomizeAutoAirRollEnabled;
-	shared_ptr<float> randomizeAutoAirRollLower;
-	shared_ptr<float> randomizeAutoAirRollUpper;
-	shared_ptr<int> randomizeAutoAirRollDirection;
+	shared_ptr<int> randomizeAutoAirRollEnabled;
+	shared_ptr<float> randomizeAutoAirRollAmount;
 
 	bool usedAutoAirRollLastTick;
 
@@ -33,6 +31,5 @@ public:
 	void OnFreeplayDestroy(std::string eventName);
 	void OnEnabledChanged(std::string oldValue, CVarWrapper cvar);
 	void Log(std::string message, bool sendToChat);
-	// void ScheduleNextRandomizationTimeout();
 };
 

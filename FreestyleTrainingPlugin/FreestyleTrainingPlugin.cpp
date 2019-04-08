@@ -8,9 +8,17 @@
 
 #define SPINYOUBITCHDEADZONE 0.2f
 
-#define LEFT_AND_RIGHT 0
-#define LEFT 1
-#define RIGHT 2
+#define RANDOM_OFF 0
+#define RANDOM_LEFT 1
+#define RANDOM_RIGHT 2
+
+#define CVAR_ENABLED "freestyletraining_enabled"
+#define CVAR_AUTO_AIR_ROLL "freestyletraining_auto_air_roll"
+
+#define CVAR_RANDOM_AUTO_AIR_ROLL_ENABLED "freestyletraining_randomize_auto_air_roll_enabled"
+#define CVAR_RANDOM_AUTO_AIR_ROLL_AMOUNT "freestyletraining_randomize_auto_air_roll_amount"
+#define CVAR_RANDOM_AUTO_AIR_ROLL_TIME "freestyletraining_randomize_auto_air_roll_time"
+
 
 BAKKESMOD_PLUGIN(FreestyleTrainingPlugin, "Freestyle Training Plugin", "0.1", PLUGINTYPE_FREEPLAY)
 
@@ -25,39 +33,40 @@ void FreestyleTrainingPlugin::onLoad()
 
 	srand(time(NULL));
 
-	enabled = make_shared<bool>(false);
+	enabled = make_shared <bool>(false);
 	autoAirRoll = make_shared<float>(0.f);
 
-	randomizeAutoAirRollEnabled = make_shared<bool>(false);
-	randomizeAutoAirRollLower = make_shared<float>(0.0f);
-	randomizeAutoAirRollUpper = make_shared<float>(0.0f);
-	randomizeAutoAirRollDirection = make_shared<int>(0);
+	randomizeAutoAirRollEnabled = make_shared<int>(RANDOM_OFF);
+	randomizeAutoAirRollAmount = make_shared<float>(0.0f);
 
 	// freeplay is now a mutator
 	gameWrapper->HookEvent("Function TAGame.Mutator_Freeplay_TA.Init", bind(&FreestyleTrainingPlugin::OnFreeplayLoad, this, std::placeholders::_1));
 	gameWrapper->HookEvent("Function TAGame.GameEvent_Soccar_TA.Destroyed", bind(&FreestyleTrainingPlugin::OnFreeplayDestroy, this, std::placeholders::_1));
 
-	cvarManager->registerCvar("freestyletraining_enabled", "0", "Enables/disable freestyle training mode", true, true, 0.f, true, 1.f)
+	cvarManager->registerCvar(CVAR_ENABLED, "0", "Enables/disable freestyle training mode", true, true, 0.f, true, 1.f)
 		.addOnValueChanged(std::bind(&FreestyleTrainingPlugin::OnEnabledChanged, this, std::placeholders::_1, std::placeholders::_2));
-	cvarManager->getCvar("freestyletraining_enabled").bindTo(enabled);
+	cvarManager->getCvar(CVAR_ENABLED).bindTo(enabled);
 
-	cvarManager->registerCvar("freestyletraining_auto_air_roll", "0", "Auto air roll amount", true, true, -1.f, true, 1.f).bindTo(autoAirRoll);
+	cvarManager->registerCvar(CVAR_AUTO_AIR_ROLL, "0", "Auto air roll amount", true, true, -1.f, true, 1.f).bindTo(autoAirRoll);
 
 	// todo: combine enabled and direction 0 = off, 1 = left, 2 = right, 3 = left and right. then can use bool ops and look cool
-	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_enabled", "0", "Enables/disable auto air roll randomization", true, true, 0.f, true, 1.f).bindTo(randomizeAutoAirRollEnabled);
-	cvarManager->getCvar("freestyletraining_randomize_auto_air_roll_enabled").addOnValueChanged([this](string oldValue, CVarWrapper cvar)
+	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_ENABLED, "0", "Enables/disable auto air roll randomization", true, true, 0, true, 3).bindTo(randomizeAutoAirRollEnabled);
+	cvarManager->getCvar(CVAR_RANDOM_AUTO_AIR_ROLL_ENABLED).addOnValueChanged([this](string oldValue, CVarWrapper cvar)
 	{
-		if (cvar.getBoolValue()) {
+		int newRandomEnabled = cvar.getIntValue();
+		Log("newRandomEnabled:" + to_string(newRandomEnabled), true);
+
+		if (newRandomEnabled) {
 			string direction;
-			switch (*randomizeAutoAirRollDirection) {
-			case LEFT_AND_RIGHT:
-				direction = "Left & Right";
-				break;
-			case LEFT:
+			switch (newRandomEnabled) {
+			case RANDOM_LEFT:
 				direction = "Left Only";
 				break;
-			case RIGHT:
+			case RANDOM_RIGHT:
 				direction = "Right Only";
+				break;
+			case RANDOM_LEFT | RANDOM_RIGHT:
+				direction = "Left & Right";
 				break;
 			}
 
@@ -69,11 +78,8 @@ void FreestyleTrainingPlugin::onLoad()
 		}
 	});
 
-	// todo: use the range widget that i didn't know about at the time
-	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_lower", "0", "Random Auto Air Roll Lower", true, true, 0.0f, true, 1.f).bindTo(randomizeAutoAirRollLower);
-	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_upper", "0", "Random Auto Air Roll Upper", true, true, 0.0f, true, 1.f).bindTo(randomizeAutoAirRollUpper);
-	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_direction", "0", "Random Auto Air Roll Direction", false, false, 0, false, 0, false).bindTo(randomizeAutoAirRollDirection);
-	cvarManager->registerCvar("freestyletraining_randomize_auto_air_roll_time", "0", "Random Auto Air Roll Time", true, true, 0.0f, true, 600.0f);
+	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_AMOUNT, "(0, 100)", "Random Auto Air Roll Amount", true, true, 0, true, 100).bindTo(randomizeAutoAirRollAmount);
+	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_TIME, "0", "Random Auto Air Roll Time", true, true, 0.0f, true, 600.0f);
 
 	cvarManager->registerNotifier("freestyletraining_do_randomize_auto_air_roll", std::bind(&FreestyleTrainingPlugin::DoRandomizeAutoAirRoll, this), "Randomize auto air roll within upper and lower", PERMISSION_FREEPLAY);
 }
@@ -106,12 +112,12 @@ void FreestyleTrainingPlugin::SetVehicleInput(CarWrapper cw, void * params, stri
 	}
 
 	float secondsElapsed = training.GetSecondsElapsed();
-	float randomizedTimeInRange = cvarManager->getCvar("freestyletraining_randomize_auto_air_roll_time").getFloatValue();
+	float randomizedTimeInRange = cvarManager->getCvar(CVAR_RANDOM_AUTO_AIR_ROLL_TIME).getFloatValue();
 
 	if (*randomizeAutoAirRollEnabled && randomizedTimeInRange > 0 && secondsElapsed > nextRandomizationTimeout) {
 		DoRandomizeAutoAirRoll();
 		
-		cvarManager->log("randomization timeout elapsed - randomizing auto air roll again in " + to_string(randomizedTimeInRange) + "seconds");
+		cvarManager->log("randomization timeout elapsed - randomizing auto air roll again in " + to_string(randomizedTimeInRange) + " seconds");
 
 		nextRandomizationTimeout = secondsElapsed + randomizedTimeInRange;
 	}
@@ -176,21 +182,19 @@ void FreestyleTrainingPlugin::RandomizeAirRollTick(bool usedAutoAirRollThisTick)
 
 void FreestyleTrainingPlugin::DoRandomizeAutoAirRoll()
 {
-	float randomMin = min(*randomizeAutoAirRollLower, *randomizeAutoAirRollUpper);
-	float randomMax = max(*randomizeAutoAirRollLower, *randomizeAutoAirRollUpper);
+	float randomized = cvarManager->getCvar(CVAR_RANDOM_AUTO_AIR_ROLL_AMOUNT).getFloatValue() / 100.0f;
 
-	float randomized = abs(random(randomMin, randomMax));
-
-	switch (*randomizeAutoAirRollDirection) {
-	case LEFT_AND_RIGHT:
+	switch (*randomizeAutoAirRollEnabled) {
+	case RANDOM_LEFT:
+		randomized = -1.0f * randomized;
+		break;
+	case RANDOM_RIGHT:
+		break;
+	case RANDOM_LEFT | RANDOM_RIGHT:
 		if (rand() % 2 == 0) {
 			// 50% chance of randomizing left
 			randomized = -1.0f * randomized;
 		}
-	case LEFT:
-		randomized = -1.0f * randomized;
-		break;
-	case RIGHT:
 		break;
 	}
 	
@@ -208,7 +212,7 @@ void FreestyleTrainingPlugin::DoRandomizeAutoAirRoll()
 
 	Log(chatMsg.str(), true);
 
-	cvarManager->getCvar("freestyletraining_auto_air_roll").setValue(randomized);
+	cvarManager->getCvar(CVAR_AUTO_AIR_ROLL).setValue(randomized);
 }
 
 void FreestyleTrainingPlugin::Log(string message, bool sendToChat) 
