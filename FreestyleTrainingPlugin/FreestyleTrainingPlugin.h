@@ -2,14 +2,15 @@
 #pragma comment( lib, "bakkesmod.lib" )
 #include "bakkesmod/plugin/bakkesmodplugin.h"
 
+
 class FreestyleTrainingPlugin : public BakkesMod::Plugin::BakkesModPlugin
 {
 private:
 	shared_ptr<bool> enabled;
-	shared_ptr<float> autoAirRoll;
+	shared_ptr<int> autoAirRoll;
 
 	shared_ptr<int> randomizeAutoAirRollEnabled;
-	shared_ptr<float> randomizeAutoAirRollAmount;
+	shared_ptr<int> randomizeAutoAirRollAmount;
 
 	bool usedAutoAirRollLastTick;
 
