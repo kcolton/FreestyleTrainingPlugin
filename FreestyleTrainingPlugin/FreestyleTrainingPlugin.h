@@ -14,7 +14,8 @@ private:
 
 	bool usedAutoAirRollLastTick;
 
-	float nextRandomizationTimeout = .0f;
+	float nextAirRollRandomizationTimeout = .0f;
+	float nextGravityRandomizationTimeout = .0f;
 	
 	void Hook();
 	void Unhook();
@@ -22,6 +23,7 @@ private:
 	void RandomizeAirRollTick(bool usedAutoAirRollThisTick);
 
 	void DoRandomizeAutoAirRoll();
+	void DoRandomizeGravity();
 
 public:
 	virtual void onLoad();

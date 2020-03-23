@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "FreestyleTrainingPlugin.h"
 
 #include "bakkesmod\wrappers\GameEvent\TutorialWrapper.h"
@@ -15,15 +16,23 @@
 #define CVAR_ENABLED "freestyletraining_enabled"
 #define CVAR_AUTO_AIR_ROLL "freestyletraining_auto_air_roll"
 
+#define CVAR_LOG_DIRECTION_CHANGE "freestyletraining_log_direction_change"
+#define CVAR_LOG_GRAVITY_CHANGE "freestyletraining_log_gravity_change"
+
 #define CVAR_RANDOM_AUTO_AIR_ROLL_ENABLED "freestyletraining_randomize_auto_air_roll_enabled"
+#define CVAR_RANDOM_AUTO_AIR_ROLL_AFTER_INPUT "freestyletraining_randomize_auto_air_roll_after_input"
 #define CVAR_RANDOM_AUTO_AIR_ROLL_AMOUNT "freestyletraining_randomize_auto_air_roll_amount"
 #define CVAR_RANDOM_AUTO_AIR_ROLL_TIME "freestyletraining_randomize_auto_air_roll_time"
+
+#define CVAR_RANDOM_GRAVITY_ENABLED "freestyletraining_randomize_gravity_enabled"
+#define CVAR_RANDOM_GRAVITY_AMOUNT "freestyletraining_randomize_gravity_amount"
+#define CVAR_RANDOM_GRAVITY_TIME "freestyletraining_randomize_gravity_time"
 
 #define TRANSITION_NUM_STEPS 13
 #define TRANSITION_SECONDS 0.65f
 
 
-BAKKESMOD_PLUGIN(FreestyleTrainingPlugin, "Freestyle Training Plugin", "0.1", PLUGINTYPE_FREEPLAY)
+BAKKESMOD_PLUGIN(FreestyleTrainingPlugin, "Freestyle Training Plugin", "0.2", PLUGINTYPE_FREEPLAY)
 
 
 static inline float random(float min, float max) {
@@ -49,6 +58,9 @@ void FreestyleTrainingPlugin::onLoad()
 	cvarManager->registerCvar(CVAR_ENABLED, "0", "Enables/disable freestyle training mode", true, true, 0.f, true, 1.f)
 		.addOnValueChanged(std::bind(&FreestyleTrainingPlugin::OnEnabledChanged, this, std::placeholders::_1, std::placeholders::_2));
 	cvarManager->getCvar(CVAR_ENABLED).bindTo(enabled);
+
+	cvarManager->registerCvar(CVAR_LOG_DIRECTION_CHANGE, "1", "Notify on direction change", true, true, 0.f, true, 1.f);
+	cvarManager->registerCvar(CVAR_LOG_GRAVITY_CHANGE, "1", "Notify on direction change", true, true, 0.f, true, 1.f);
 
 	cvarManager->registerCvar(CVAR_AUTO_AIR_ROLL, "0", "Auto air roll amount", true, true, -100, true, 100).bindTo(autoAirRoll);
 
@@ -81,10 +93,19 @@ void FreestyleTrainingPlugin::onLoad()
 		}
 	});
 
+	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_AFTER_INPUT, "1", "Randomize Auto Air Roll After Manual Input", true, true, 0.f, true, 1.f);
+
 	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_AMOUNT, "(0, 100)", "Random Auto Air Roll Amount", true, true, 0, true, 100).bindTo(randomizeAutoAirRollAmount);
-	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_TIME, "0", "Random Auto Air Roll Time", true, true, 0, true, 600);
+	cvarManager->registerCvar(CVAR_RANDOM_AUTO_AIR_ROLL_TIME, "(0, 60)", "Random Auto Air Roll Time", true, true, 0, true, 600);
 
 	cvarManager->registerNotifier("freestyletraining_do_randomize_auto_air_roll", std::bind(&FreestyleTrainingPlugin::DoRandomizeAutoAirRoll, this), "Randomize auto air roll within upper and lower", PERMISSION_FREEPLAY);
+
+	cvarManager->registerCvar(CVAR_RANDOM_GRAVITY_ENABLED, "0", "Enables/disable gravity randomization", true, true, 0.f, true, 1.f);
+	cvarManager->registerCvar(CVAR_RANDOM_GRAVITY_AMOUNT, "(-650, 650)", "Random gravity range", true, true, -1000, true, 1000);
+	cvarManager->registerCvar(CVAR_RANDOM_GRAVITY_TIME, "(0, 60)", "Random gravity time", true, true, 0, true, 600);
+
+	cvarManager->registerNotifier("freestyletraining_do_randomize_gravity", std::bind(&FreestyleTrainingPlugin::DoRandomizeGravity, this), "Randomize gravity within upper and lower", PERMISSION_FREEPLAY);
+
 }
 
 
@@ -98,6 +119,12 @@ void FreestyleTrainingPlugin::SetVehicleInput(CarWrapper cw, void * params, stri
 	if (!gameWrapper->IsInFreeplay())
 	{
 		cvarManager->log("not in freeplay but freestyle training still hooked somehow");
+		return;
+	}
+
+	if (*enabled)
+	{
+		cvarManager->log("FreestyleTrainingPlugin not enabled anymore but still hooked");
 		return;
 	}
 
@@ -115,15 +142,24 @@ void FreestyleTrainingPlugin::SetVehicleInput(CarWrapper cw, void * params, stri
 	}
 
 	float secondsElapsed = training.GetSecondsElapsed();
-	// push scheduled change out by transition length as a lazy way to not get overlapping transitions
-	float randomizedTimeInRange = cvarManager->getCvar(CVAR_RANDOM_AUTO_AIR_ROLL_TIME).getFloatValue() + TRANSITION_SECONDS;
 
-	if (*randomizeAutoAirRollEnabled && randomizedTimeInRange > 0 && secondsElapsed > nextRandomizationTimeout) {
+	// push scheduled change out by transition length as a lazy way to not get overlapping transitions
+	float randomizedAirRollTimeInRange = cvarManager->getCvar(CVAR_RANDOM_AUTO_AIR_ROLL_TIME).getFloatValue() + TRANSITION_SECONDS;
+
+	if (*randomizeAutoAirRollEnabled && randomizedAirRollTimeInRange > 0 && secondsElapsed > nextAirRollRandomizationTimeout) 
+	{
 		DoRandomizeAutoAirRoll();
 		
-		cvarManager->log("randomization timeout elapsed - randomizing auto air roll again in " + to_string(randomizedTimeInRange) + " seconds");
+		cvarManager->log("randomization timeout elapsed - randomizing auto air roll again in " + to_string(randomizedAirRollTimeInRange) + " seconds");
 
-		nextRandomizationTimeout = secondsElapsed + randomizedTimeInRange;
+		nextAirRollRandomizationTimeout = secondsElapsed + randomizedAirRollTimeInRange;
+	}
+
+	float randomizedGravityTimeInRange = cvarManager->getCvar(CVAR_RANDOM_GRAVITY_TIME).getFloatValue() + TRANSITION_SECONDS;
+	if (cvarManager->getCvar(CVAR_RANDOM_GRAVITY_ENABLED).getBoolValue() && randomizedGravityTimeInRange > 0 && secondsElapsed > nextGravityRandomizationTimeout) 
+	{
+		DoRandomizeGravity();
+		nextGravityRandomizationTimeout = secondsElapsed + randomizedGravityTimeInRange;
 	}
 }
 
@@ -162,6 +198,9 @@ void FreestyleTrainingPlugin::OnEnabledChanged(std::string oldValue, CVarWrapper
 void FreestyleTrainingPlugin::Hook() 
 {
 	cvarManager->log("FreestyleTrainingPlugin::Hook");
+	nextAirRollRandomizationTimeout = .0f;
+	nextGravityRandomizationTimeout = .0f;
+
 	// copied from mechanical plugin
 	gameWrapper->HookEventWithCaller<CarWrapper>("Function TAGame.Car_TA.SetVehicleInput",
 		bind(&FreestyleTrainingPlugin::SetVehicleInput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
@@ -170,13 +209,15 @@ void FreestyleTrainingPlugin::Hook()
 void FreestyleTrainingPlugin::Unhook() 
 {
 	cvarManager->log("FreestyleTrainingPlugin::Unhook");
+	nextAirRollRandomizationTimeout = .0f;
+	nextGravityRandomizationTimeout = .0f;
 	gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");
 }
 
 void FreestyleTrainingPlugin::RandomizeAirRollTick(bool usedAutoAirRollThisTick)
 {
 	// randomize auto air roll amount each time user finishes overriding
-	if (usedAutoAirRollLastTick && !usedAutoAirRollThisTick && *randomizeAutoAirRollEnabled)
+	if (usedAutoAirRollLastTick && !usedAutoAirRollThisTick && *randomizeAutoAirRollEnabled && cvarManager->getCvar(CVAR_RANDOM_AUTO_AIR_ROLL_AFTER_INPUT).getBoolValue())
 	{
 		DoRandomizeAutoAirRoll();
 	}
@@ -214,7 +255,7 @@ void FreestyleTrainingPlugin::DoRandomizeAutoAirRoll()
 		chatMsg << " [right]";
 	}
 
-	Log(chatMsg.str(), true);
+	Log(chatMsg.str(), cvarManager->getCvar(CVAR_LOG_DIRECTION_CHANGE).getBoolValue());
 
 	float randomDeltaPerStep = (randomized - *autoAirRoll) / (float)TRANSITION_NUM_STEPS;
 	int fromAirRoll = *autoAirRoll;
@@ -233,6 +274,13 @@ void FreestyleTrainingPlugin::DoRandomizeAutoAirRoll()
 		cvarManager->getCvar(CVAR_AUTO_AIR_ROLL).setValue(randomized);
 	}, TRANSITION_SECONDS);
 	
+}
+
+void FreestyleTrainingPlugin::DoRandomizeGravity()
+{
+	int randomizedGravityAmount = cvarManager->getCvar(CVAR_RANDOM_GRAVITY_AMOUNT).getIntValue();
+	Log("Randomizing gravity" + to_string(randomizedGravityAmount), cvarManager->getCvar(CVAR_LOG_GRAVITY_CHANGE).getBoolValue());
+	cvarManager->executeCommand("sv_soccar_gravity " + to_string(randomizedGravityAmount), false);
 }
 
 void FreestyleTrainingPlugin::Log(string message, bool sendToChat) 
